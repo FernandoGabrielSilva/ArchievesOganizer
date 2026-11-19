@@ -9,10 +9,15 @@ if [ ! -x "$BIN" ] && [ -x "$HERE/../dist/OrganizadorArquivos" ]; then
     BIN="$HERE/../dist/OrganizadorArquivos"
 fi
 
-if [ ! -x "$BIN" ]; then
-    echo "Binário não encontrado: $BIN" >&2
-    echo "Execute o AppImage, ou rode build_appimage.sh / PyInstaller primeiro." >&2
-    exit 1
+if [ -x "$BIN" ]; then
+    exec "$BIN" "$@"
 fi
 
-exec "$BIN" "$@"
+# Sem binário compilado: roda o código-fonte diretamente.
+if [ -f "$HERE/../main.py" ]; then
+    cd "$HERE/.." || exit 1
+    exec python3 main.py "$@"
+fi
+
+echo "Nem o binário (usr/bin/OrganizadorArquivos ou dist/OrganizadorArquivos) nem main.py foram encontrados." >&2
+exit 1
