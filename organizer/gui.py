@@ -8,14 +8,41 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog,
     QSizePolicy, QHeaderView, QTableWidget, QTableWidgetItem,
 )
-from PySide6.QtGui import QAction
-from qfluentwidgets import ScrollArea
+from PySide6.QtGui import QAction, QPainter
+from qfluentwidgets import ScrollArea, isDarkTheme
 from qfluentwidgets import (
     FluentWindow, FluentIcon as FIF, PushButton, PrimaryPushButton, LineEdit,
     ComboBox, CheckBox, TableWidget, ProgressBar, TextEdit, ListWidget,
     CardWidget, SubtitleLabel, BodyLabel, CaptionLabel, InfoBar,
     InfoBarPosition, setTheme, Theme, setThemeColor, NavigationItemPosition,
 )
+
+
+def _safe_scroll_handle_paint(self, event):
+    """Evita abort do Qt no paintEvent da barra de rolagem do qfluentwidgets.
+
+    Versões recentes do PySide6 (6.12+) podem abortar dentro de
+    QPainter.drawRoundedRect() quando o handle da barra é muito fino (3 px).
+    Um retângulo simples tem o mesmo visual nessa espessura e é seguro.
+    """
+    if self.width() <= 0 or self.height() <= 0:
+        return
+    painter = QPainter(self)
+    try:
+        painter.setRenderHints(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setOpacity(self.opacity)
+        painter.setBrush(self.darkColor if isDarkTheme() else self.lightColor)
+        painter.drawRect(self.rect())
+    finally:
+        painter.end()
+
+
+try:
+    from qfluentwidgets.components.widgets.scroll_bar import ScrollBarHandle
+    ScrollBarHandle.paintEvent = _safe_scroll_handle_paint
+except Exception:
+    pass
 
 from .config import load_config, save_config, ensure_dirs, DEFAULT_CATEGORIES, DEFAULT_CONFIG
 from .classifier import plan_moves

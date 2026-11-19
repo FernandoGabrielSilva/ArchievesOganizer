@@ -7,8 +7,13 @@ cd "$BASE"
 # O AppImage precisa do binário onefile gerado pelo PyInstaller.
 if [ ! -x dist/$APP ]; then
     echo "Binário não encontrado. Gerando com PyInstaller..."
-    pyinstaller --noconfirm --windowed --onefile --name "$APP" main.py \
+    python3 -m PyInstaller --noconfirm --windowed --onefile --name "$APP" main.py \
         --hidden-import organizer --collect-all qfluentwidgets --collect-all PySide6
+fi
+
+if [ ! -x "dist/$APP" ]; then
+    echo "Falha: dist/$APP não foi gerado pelo PyInstaller." >&2
+    exit 1
 fi
 
 APPDIR="$BASE/AppDir"
