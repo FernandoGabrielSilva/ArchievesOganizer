@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Organizador de Arquivos
+Exec=OrganizadorArquivos
+Icon=OrganizadorArquivos
+Categories=Utility;FileManager;
+Terminal=false

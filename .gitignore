@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+AppDir/
+*.AppImage
+.venv/
+dist/
+build/
+*.spec
+*.log
