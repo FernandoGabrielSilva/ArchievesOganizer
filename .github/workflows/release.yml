@@ -49,7 +49,7 @@ jobs:
       - name: Build AppImage
         run: |
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
-          cp dist/OrganizadorArquivos AppDir/usr/bin/organizador-arquivos
+          cp dist/OrganizadorArquivos AppDir/usr/bin/OrganizadorArquivos
           cp resources/organizador.desktop AppDir/usr/share/applications/organizador-arquivos.desktop
           cp resources/organizador.desktop AppDir/organizador-arquivos.desktop
           cp resources/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/organizador-arquivos.png

@@ -7,7 +7,8 @@ PKG=organizador-arquivos
 ROOT="debbuild/${PKG}_${VER}_${DEBARCH}"
 rm -rf "$ROOT"
 mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps"
-cp dist/OrganizadorArquivos "$ROOT/usr/bin/organizador-arquivos"
+install -m 755 dist/OrganizadorArquivos "$ROOT/usr/bin/OrganizadorArquivos"
+  ln -sf OrganizadorArquivos "$ROOT/usr/bin/organizador-arquivos"
 cp resources/organizador.desktop "$ROOT/usr/share/applications/organizador-arquivos.desktop"
 cp resources/icon.png "$ROOT/usr/share/icons/hicolor/256x256/apps/organizador-arquivos.png"
 cat > "$ROOT/DEBIAN/control" <<EOF

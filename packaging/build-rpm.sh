@@ -16,9 +16,11 @@ Organiza arquivos por tipo em pastas.
 
 %install
 mkdir -p %{buildroot}/usr/bin
-install -m 755 %{_sourcedir}/OrganizadorArquivos %{buildroot}/usr/bin/organizador-arquivos
+install -m 755 %{_sourcedir}/OrganizadorArquivos %{buildroot}/usr/bin/OrganizadorArquivos
+ln -sf OrganizadorArquivos %{buildroot}/usr/bin/organizador-arquivos
 
 %files
+/usr/bin/OrganizadorArquivos
 /usr/bin/organizador-arquivos
 EOF
 rpmbuild -bb ~/rpmbuild/SPECS/organizador-arquivos.spec
