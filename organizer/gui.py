@@ -898,6 +898,7 @@ def main():
     app.setPalette(pal)
     w = MainWindow()
     w.show()
+    updater.mark_update_started_ok()
     w._auto_check_on_start()
     sys.exit(app.exec())
 

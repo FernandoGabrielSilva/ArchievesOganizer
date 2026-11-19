@@ -2,18 +2,28 @@
 import json
 import os
 import platform
+import shlex
 import shutil
 import ssl
 import stat
 import sys
 import tempfile
+import time
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from .version import __version__, __repo__
 
 GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 USER_AGENT = "OrganizadorArquivos-Updater"
+
+_DATA_HOME = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+STATE_DIR = Path(_DATA_HOME) / "OrganizadorArquivos"
+BACKUP_DIR = STATE_DIR / "backups"
+PENDING_FILE = STATE_DIR / "pending_update.json"
+READY_FILE = STATE_DIR / "update_ready"
+BACKUP_TTL_DAYS = 7
 
 
 def current_version():
@@ -172,26 +182,110 @@ def download_asset(asset, dest_dir=None, progress=None):
     return dest
 
 
+def cleanup_backups(ttl_days=BACKUP_TTL_DAYS, keep=1):
+    """Mantém no máximo `keep` backups e apaga os mais antigos que `ttl_days`."""
+    try:
+        files = sorted(
+            (p for p in BACKUP_DIR.iterdir() if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        return
+    now = time.time()
+    for path in files[keep:]:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    for path in files[:keep]:
+        if now - path.stat().st_mtime > ttl_days * 86400:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
+def mark_update_started_ok():
+    """Chamado pela GUI após abrir: confirma que a nova versão iniciou."""
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        READY_FILE.write_text(str(time.time()), encoding="utf-8")
+    except OSError:
+        pass
+    cleanup_backups()
+
+
 def apply_appimage_update(new_file):
-    """Substitui o AppImage atual e reinicia. Usa script auxiliar."""
-    new_file = Path(new_file)
-    target = current_appimage_path()
+    """Instala com backup centralizado e rollback automático se falhar."""
+    new_file = Path(new_file).resolve()
+    target = current_appimage_path().resolve()
     if not target.exists():
         raise RuntimeError("AppImage atual não encontrado")
-    # make executable
-    new_file.chmod(new_file.stat().st_mode | stat.S_IEXEC)
+
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    # Antes de cada atualização, remove backups mais antigos.
+    cleanup_backups(keep=0)
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = BACKUP_DIR / f"{target.stem}_v{current_version()}_{stamp}{target.suffix}"
+    shutil.move(str(target), str(backup))
+    shutil.move(str(new_file), str(target))
+    os.chmod(target, target.stat().st_mode | stat.S_IEXEC)
+
+    pending = {
+        "target": str(target),
+        "backup": str(backup),
+        "new_file": str(new_file),
+        "version": current_version(),
+        "time": time.time(),
+    }
+    PENDING_FILE.write_text(json.dumps(pending), encoding="utf-8")
+
+    q = shlex.quote
     script = Path(tempfile.gettempdir()) / "organizador_update.sh"
     script.write_text(
         "#!/bin/bash\n"
+        f"target={q(str(target))}\n"
+        f"backup={q(str(backup))}\n"
+        f"new_file={q(str(new_file))}\n"
+        f"ready={q(str(READY_FILE))}\n"
+        f"pending={q(str(PENDING_FILE))}\n"
+        'rm -f "$ready"\n'
         "sleep 2\n"
-        f'mv -f "{target}" "{target}.bak"\n'
-        f'mv -f "{new_file}" "{target}"\n'
-        f'chmod +x "{target}"\n'
-        f'"{target}" &\n'
-        f'rm -f "{script}"\n'
+        '"$target" &\n'
+        "pid=$!\n"
+        'deadline=$(( $(date +%s) + 90 ))\n'
+        "ok=0\n"
+        'while [ "$(date +%s)" -lt "$deadline" ]; do\n'
+        '  if [ -f "$ready" ]; then ok=1; break; fi\n'
+        '  if ! kill -0 "$pid" 2>/dev/null; then\n'
+        '    wait "$pid"; rc=$?\n'
+        '    if [ "$rc" -eq 0 ]; then ok=1; fi\n'
+        "    break\n"
+        "  fi\n"
+        "  sleep 0.5\n"
+        "done\n"
+        'if [ "$ok" -eq 1 ]; then\n'
+        '  rm -f "$ready" "$pending"\n'
+        "else\n"
+        '  kill "$pid" 2>/dev/null || true\n'
+        '  wait "$pid" 2>/dev/null || true\n'
+        '  mv -f "$backup" "$target"\n'
+        '  chmod +x "$target"\n'
+        '  rm -f "$new_file" "$pending" "$ready"\n'
+        '  "$target" &\n'
+        "fi\n"
+        f'rm -f {q(str(script))}\n',
+        encoding="utf-8",
     )
     script.chmod(0o755)
-    # launch detached
     import subprocess
-    subprocess.Popen(["/bin/bash", str(script)], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(
+        ["/bin/bash", str(script)],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     return True
