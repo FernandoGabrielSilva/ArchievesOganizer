@@ -1,3 +1,3 @@
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 __app_name__ = "Organizador de Arquivos"
 __repo__ = "FernandoGabrielSilva/ArchievesOganizer"
