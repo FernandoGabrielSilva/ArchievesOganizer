@@ -3,12 +3,12 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal, qInstallMessageHandler
+from PySide6.QtCore import Qt, QThread, Signal, qInstallMessageHandler, QUrl
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog,
-    QSizePolicy, QHeaderView, QTableWidget, QTableWidgetItem,
+    QSizePolicy, QHeaderView, QTableWidget, QTableWidgetItem, QMessageBox, QDialog,
 )
-from PySide6.QtGui import QAction, QPainter
+from PySide6.QtGui import QAction, QPainter, QDesktopServices
 
 # PySide6 6.12 tem um bug de refcount em QPainter.setClipping(True) que aborta
 # o processo (`none_dealloc`/`bool_dealloc`) ao pintar a tabela do
@@ -81,7 +81,7 @@ from .config import load_config, save_config, ensure_dirs, DEFAULT_CATEGORIES, D
 from .classifier import plan_moves
 from .mover import execute_moves, list_history, undo_history
 from .i18n import t, set_language, get_language, load_language_from_config
-from .version import __version__
+from .version import __version__, __repo__
 from . import updater
 
 
@@ -212,6 +212,45 @@ class CategoryEditor(QWidget):
 from PySide6.QtWidgets import QTableWidgetItem
 
 
+class AboutDialog(QDialog):
+    """Janela 'Sobre' com versão, link do projeto e verificação de updates."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(t("about_title"))
+        self.setMinimumWidth(480)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setSpacing(12)
+        lay.addWidget(SubtitleLabel(t("app_title")))
+        lay.addWidget(BodyLabel(t("about_version", v=__version__)))
+
+        desc = CaptionLabel(t("about_desc"))
+        desc.setWordWrap(True)
+        lay.addWidget(desc)
+
+        preview = CaptionLabel(t("about_preview"))
+        preview.setWordWrap(True)
+        lay.addWidget(preview)
+
+        link = QLabel(f'<a href="https://github.com/{__repo__}">{t("about_repo")}</a>')
+        link.setOpenExternalLinks(True)
+        lay.addWidget(link)
+
+        lay.addStretch(1)
+        row = QHBoxLayout()
+        self.btn_check = PushButton(t("about_check"))
+        self.btn_check.setToolTip(t("btn_check_now"))
+        row.addWidget(self.btn_check)
+        row.addStretch(1)
+        self.btn_close = PrimaryPushButton(t("about_close"))
+        row.addWidget(self.btn_close)
+        lay.addLayout(row)
+
+        self.btn_close.clicked.connect(self.accept)
+
+
 class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
@@ -220,6 +259,9 @@ class MainWindow(FluentWindow):
         self.cfg = load_config()
         ensure_dirs()
         self.current_moves = []
+        self._pending_update = None
+        self._update_prompted = False
+        self._install_update = True
 
         self._apply_theme("dark")
 
@@ -328,7 +370,15 @@ class MainWindow(FluentWindow):
         ubl.addWidget(self.chk_auto_install)
         row_upd = QHBoxLayout()
         self.btn_check_now = PushButton(t("btn_check_now"))
+        self.btn_check_now.setToolTip("Consulta o GitHub Releases para ver se há versão mais nova.")
         row_upd.addWidget(self.btn_check_now)
+        self.btn_download_update = PushButton(t("btn_download_update"))
+        self.btn_download_update.setEnabled(False)
+        self.btn_download_update.setToolTip(t("download_tooltip"))
+        row_upd.addWidget(self.btn_download_update)
+        self.btn_about = PushButton(t("btn_about"))
+        self.btn_about.setToolTip("Mostra versão, link do projeto e opção de verificar atualizações.")
+        row_upd.addWidget(self.btn_about)
         self.lbl_update_status = CaptionLabel("")
         row_upd.addWidget(self.lbl_update_status)
         row_upd.addStretch()
@@ -357,6 +407,8 @@ class MainWindow(FluentWindow):
         self.btn_save_cfg.clicked.connect(self._save_config)
         self.btn_restore.clicked.connect(self._restore_defaults)
         self.btn_check_now.clicked.connect(self._check_updates_now)
+        self.btn_download_update.clicked.connect(self._download_update_clicked)
+        self.btn_about.clicked.connect(self._about)
 
     # ---------- ORGANIZE ----------
     def _build_organize(self, parent):
@@ -375,7 +427,7 @@ class MainWindow(FluentWindow):
         self.btn_help.clicked.connect(self._howto)
         action_row.addWidget(self.btn_help)
         self.btn_analyze = PrimaryPushButton(t("btn_analyze"))
-        self.btn_analyze.setToolTip("Varre as pastas de origem e mostra quais arquivos seriam movidos, sem mover nada.")
+        self.btn_analyze.setToolTip("Prévia (dry-run): varre as pastas e mostra quais arquivos SERIAM movidos. Nenhum arquivo é alterado até você clicar em 'Aplicar movimentos'.")
         self.btn_apply = PrimaryPushButton(t("btn_apply"))
         self.btn_apply.setEnabled(False)
         self.btn_apply.setToolTip("Executa os movimentos mostrados no preview. Pede confirmação antes.")
@@ -459,7 +511,7 @@ class MainWindow(FluentWindow):
         act_howto = QAction("Como usar", self)
         act_howto.triggered.connect(self._howto)
         help_menu.addAction(act_howto)
-        act_about = QAction("Sobre", self)
+        act_about = QAction(t("btn_about"), self)
         act_about.triggered.connect(self._about)
         help_menu.addAction(act_about)
 
@@ -470,10 +522,9 @@ class MainWindow(FluentWindow):
         )
 
     def _about(self):
-        from PySide6.QtWidgets import QMessageBox
-        QMessageBox.about(self, t("about_title"),
-            t("about_body")
-        )
+        dlg = AboutDialog(self)
+        dlg.btn_check.clicked.connect(lambda: (dlg.accept(), self._check_updates_now()))
+        dlg.exec()
 
     def _browse_dest(self):
         d = QFileDialog.getExistingDirectory(self, "Escolher pasta de destino base")
@@ -556,6 +607,7 @@ class MainWindow(FluentWindow):
         self._notify(t("msg_defaults_restored"), success=True)
 
     def _check_updates_now(self):
+        self._update_prompted = False
         self.lbl_update_status.setText("...")
         thr = _UpdateThread(self)
         thr.result.connect(self._on_update_result)
@@ -572,37 +624,71 @@ class MainWindow(FluentWindow):
         self._update_thread = thr
 
     def _on_update_result(self, info):
+        """Resultado de uma verificação feita pelo usuário: sempre pergunta."""
         if info.get("error"):
             self.lbl_update_status.setText(t("update_error", e=info["error"]))
             self._notify(t("update_error", e=info["error"]), success=False)
             return
         if not info.get("has"):
+            self.btn_download_update.setEnabled(False)
+            self._pending_update = None
             self.lbl_update_status.setText(t("update_none", v=info.get("tag") or __version__))
             self._notify(t("update_none", v=info.get("tag") or __version__), success=True)
             return
+        self._pending_update = info
+        self.btn_download_update.setEnabled(True)
         self.lbl_update_status.setText(t("update_available", v=info["tag"]))
         self._notify(t("update_available", v=info["tag"]), success=True)
-        cfg = load_config()
-        if cfg.get("auto_install_updates") and info.get("asset") and updater.is_appimage():
-            self._download_and_install(info["asset"], info["tag"])
-        elif info.get("url"):
-            # store url for manual
-            self._last_update_url = info["url"]
+        self._offer_update(info, force=True)
 
     def _on_update_result_auto(self, info):
         if info.get("error") or not info.get("has"):
             return
+        self._pending_update = info
+        self.btn_download_update.setEnabled(True)
         self.lbl_update_status.setText(t("update_available", v=info["tag"]))
-        self._notify(t("update_available", v=info["tag"]), success=True)
         cfg = load_config()
         if cfg.get("auto_install_updates") and info.get("asset") and updater.is_appimage():
-            self._download_and_install(info["asset"], info["tag"])
+            self._download_and_install(info["asset"], info["tag"], install=True)
         else:
-            self._last_update_url = info.get("url")
+            self._offer_update(info)
 
-    def _download_and_install(self, asset, tag):
+    def _download_update_clicked(self):
+        if self._pending_update:
+            self._offer_update(self._pending_update, force=True)
+        else:
+            self._check_updates_now()
+
+    def _offer_update(self, info, force=False):
+        """Pergunta ao usuário se deseja baixar/instalar a nova versão."""
+        if not info.get("asset") and not info.get("url"):
+            return
+        if not force and self._update_prompted:
+            return
+        self._update_prompted = True
+        tag = info.get("tag") or ""
+        reply = QMessageBox.question(
+            self,
+            t("update_prompt_title"),
+            t("update_prompt_body", v=tag),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if reply == QMessageBox.Yes:
+            if info.get("asset"):
+                self._download_and_install(info["asset"], tag)
+            elif info.get("url"):
+                QDesktopServices.openUrl(QUrl(info["url"]))
+        else:
+            self.lbl_update_status.setText(t("update_available", v=tag))
+
+    def _download_and_install(self, asset, tag, install=None):
+        if install is None:
+            install = updater.is_appimage()
+        self._install_update = install
         self.lbl_update_status.setText(t("update_downloading", p=0))
-        thr = _DownloadThread(asset, self)
+        dest_dir = None if install else str(Path.home() / "Downloads")
+        thr = _DownloadThread(asset, dest_dir=dest_dir, parent=self)
         thr.progress.connect(lambda d, tot: self.lbl_update_status.setText(
             t("update_downloading", p=int(d * 100 / tot) if tot else 0)))
         thr.finished_ok.connect(self._on_download_ok)
@@ -612,6 +698,14 @@ class MainWindow(FluentWindow):
         self._download_thread = thr
 
     def _on_download_ok(self, path):
+        if not getattr(self, "_install_update", False):
+            msg = t("update_downloaded", p=Path(path).name)
+            self.lbl_update_status.setText(msg)
+            self._notify(msg, success=True)
+            self.btn_download_update.setEnabled(False)
+            if self._pending_update and self._pending_update.get("url"):
+                QDesktopServices.openUrl(QUrl(self._pending_update["url"]))
+            return
         self.lbl_update_status.setText(t("update_installing"))
         try:
             updater.apply_appimage_update(path)
@@ -769,12 +863,14 @@ class _DownloadThread(QThread):
     progress = Signal(int, int)
     finished_ok = Signal(str)
     failed = Signal(str)
-    def __init__(self, asset, parent=None):
+    def __init__(self, asset, dest_dir=None, parent=None):
         super().__init__(parent)
         self.asset = asset
+        self.dest_dir = dest_dir
     def run(self):
         try:
-            path = updater.download_asset(self.asset, progress=lambda d, tot: self.progress.emit(d, tot))
+            path = updater.download_asset(self.asset, dest_dir=self.dest_dir,
+                                          progress=lambda d, tot: self.progress.emit(d, tot))
             self.finished_ok.emit(str(path))
         except Exception as e:
             self.failed.emit(str(e))
