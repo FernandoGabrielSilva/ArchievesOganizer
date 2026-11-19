@@ -42,6 +42,8 @@ DEFAULT_CONFIG = {
     "skip_unknown": False,
     "theme": "dark",
     "language": "pt_BR",
+    "auto_check_updates": True,
+    "auto_install_updates": False,
     "categories": DEFAULT_CATEGORIES,
     "category_destinations": {k: k for k in DEFAULT_CATEGORIES},
 }

@@ -1,0 +1,215 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+            appimage_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            appimage_arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1 libglib2.0-0 libxkbcommon0 libdbus-1-3 \
+            binutils file wget
+          # rpm/deb helpers
+          sudo apt-get install -y --no-install-recommends rpm dpkg-dev
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build onefile binary
+        run: |
+          pyinstaller --noconfirm --windowed --onefile --name OrganizadorArquivos main.py \
+            --hidden-import organizer --collect-all qfluentwidgets --collect-all PySide6
+
+      - name: Build AppImage
+        run: |
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cp dist/OrganizadorArquivos AppDir/usr/bin/organizador-arquivos
+          cp resources/organizador.desktop AppDir/usr/share/applications/organizador-arquivos.desktop
+          cp resources/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/organizador-arquivos.png
+          cp resources/AppRun AppDir/AppRun
+          chmod +x AppDir/AppRun AppDir/usr/bin/organizador-arquivos
+          ARCH=${{ matrix.appimage_arch }} wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${{ matrix.appimage_arch }}.AppImage -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+          ARCH=${{ matrix.appimage_arch }} /tmp/appimagetool AppDir OrganizadorArquivos-${{ matrix.appimage_arch }}.AppImage || true
+          ls -lh *.AppImage
+
+      - name: Build tarball
+        run: |
+          mkdir -p tarball/organizador-arquivos
+          cp dist/OrganizadorArquivos tarball/organizador-arquivos/
+          cp -r organizer resources main.py requirements.txt tarball/organizador-arquivos/ 2>/dev/null || true
+          cd tarball && tar -czf ../OrganizadorArquivos-${{ matrix.arch }}.tar.gz organizador-arquivos
+
+      - name: Build deb
+        run: |
+          PKG=organizador-arquivos
+          VER=${GITHUB_REF_NAME#v}
+          ROOT=debbuild/${PKG}_${VER}_${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }}
+          mkdir -p $ROOT/DEBIAN $ROOT/usr/bin $ROOT/usr/share/applications $ROOT/usr/share/icons/hicolor/256x256/apps
+          cp dist/OrganizadorArquivos $ROOT/usr/bin/organizador-arquivos
+          cp resources/organizador.desktop $ROOT/usr/share/applications/organizador-arquivos.desktop
+          cp resources/icon.png $ROOT/usr/share/icons/hicolor/256x256/apps/organizador-arquivos.png
+          ARCHDEB=${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }}
+          cat > $ROOT/DEBIAN/control <<EOF
+Package: $PKG
+Version: $VER
+Section: utils
+Priority: optional
+Architecture: $ARCHDEB
+Maintainer: FernandoGabrielSilva
+Description: Organizador de Arquivos
+ Organiza arquivos por tipo em pastas.
+EOF
+          dpkg-deb --build $ROOT OrganizadorArquivos_${VER}_${ARCHDEB}.deb
+
+      - name: Build rpm
+        run: |
+          VER=${GITHUB_REF_NAME#v}
+          mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          cp dist/OrganizadorArquivos ~/rpmbuild/SOURCES/
+          cat > ~/rpmbuild/SPECS/organizador-arquivos.spec <<'EOF'
+Name: organizador-arquivos
+Version: VERPLACEHOLDER
+Release: 1
+Summary: Organizador de Arquivos
+License: MIT
+BuildArch: x86_64
+
+%description
+Organiza arquivos por tipo em pastas.
+
+%install
+mkdir -p %{buildroot}/usr/bin
+install -m 755 %{_sourcedir}/OrganizadorArquivos %{buildroot}/usr/bin/organizador-arquivos
+
+%files
+/usr/bin/organizador-arquivos
+EOF
+          sed -i "s/VERPLACEHOLDER/$VER/" ~/rpmbuild/SPECS/organizador-arquivos.spec
+          rpmbuild -bb ~/rpmbuild/SPECS/organizador-arquivos.spec || true
+          find ~/rpmbuild/RPMS -name '*.rpm' -exec cp {} . \;
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: organizador-${{ matrix.arch }}
+          path: |
+            *.AppImage
+            *.tar.gz
+            *.deb
+            *.rpm
+
+  flatpak:
+    continue-on-error: true
+    name: Flatpak (x86_64)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: organizador-x86_64
+          path: flatpak-src
+      - name: Build flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.freedesktop.Platform//23.08 org.freedesktop.Sdk//23.08
+          mkdir -p flatpak-build
+          cp flatpak-src/OrganizadorArquivos flatpak-build/ 2>/dev/null || find flatpak-src -name 'OrganizadorArquivos' -exec cp {} flatpak-build/ \;
+          cp packaging/flatpak/com.fernandogabriel.OrganizadorArquivos.yml flatpak-build/
+          cp resources/organizador.desktop flatpak-build/organizador.desktop
+          cp resources/icon.png flatpak-build/icon.png
+          cd flatpak-build
+          flatpak-builder --force-clean build-dir com.fernandogabriel.OrganizadorArquivos.yml
+          flatpak build-export export build-dir
+          flatpak build-bundle export OrganizadorArquivos-x86_64.flatpak com.fernandogabriel.OrganizadorArquivos
+          ls -lh *.flatpak
+
+      - name: Upload flatpak
+        uses: actions/upload-artifact@v4
+        with:
+          name: organizador-flatpak
+          path: flatpak-build/*.flatpak
+
+  arch:
+    continue-on-error: true
+    name: Arch package (x86_64)
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: organizador-x86_64
+          path: arch-src
+      - name: Build arch package
+        run: |
+          pacman -Syu --noconfirm
+          mkdir -p /tmp/archbuild
+          cp arch-src/OrganizadorArquivos /tmp/archbuild/ 2>/dev/null || find arch-src -name 'OrganizadorArquivos' -exec cp {} /tmp/archbuild/ \;
+          cp packaging/arch/PKGBUILD /tmp/archbuild/
+          cp resources/organizador.desktop /tmp/archbuild/organizador.desktop
+          cp resources/icon.png /tmp/archbuild/icon.png
+          cd /tmp/archbuild
+          useradd -m builder 2>/dev/null || true
+          chown -R builder:builder /tmp/archbuild
+          sudo -u builder makepkg --noconfirm 2>&1 | tail -20 || true
+          ls -lh *.pkg.tar.zst || true
+      - name: Upload arch
+        uses: actions/upload-artifact@v4
+        with:
+          name: organizador-arch
+          path: /tmp/archbuild/*.pkg.tar.zst
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: List
+        run: find artifacts -type f | head -50
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+PY

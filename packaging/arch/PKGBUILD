@@ -1,0 +1,18 @@
+# Maintainer: FernandoGabrielSilva
+pkgname=organizador-arquivos
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Organiza arquivos por tipo em pastas (Fluent GUI)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/FernandoGabrielSilva/ArchievesOganizer"
+license=('MIT')
+depends=('glibc')
+source=()
+options=('!strip')
+
+package() {
+  install -Dm755 "${srcdir}/OrganizadorArquivos" "${pkgdir}/usr/bin/organizador-arquivos"
+  install -Dm644 "${srcdir}/organizador.desktop" "${pkgdir}/usr/share/applications/organizador-arquivos.desktop"
+  install -Dm644 "${srcdir}/icon.png" "${pkgdir}/usr/share/icons/hicolor/256x256/apps/organizador-arquivos.png"
+}
+PY

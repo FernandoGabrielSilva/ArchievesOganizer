@@ -2187,6 +2187,43 @@ _add("th", {
  "restart_msg": "เปลี่ยนภาษาแล้ว รีสตาร์ทโปรแกรมเพื่อใช้งาน.",
 })
 
+# ---------- Atualizações (chaves adicionais) ----------
+_UPDATE_KEYS = {
+ "pt_BR": {
+   "group_updates": "🔄  Atualizações",
+   "group_updates_desc": "Verifique e instale novas versões do programa automaticamente.",
+   "chk_auto_check": "Verificar atualizações automaticamente ao iniciar",
+   "chk_auto_install": "Baixar e instalar atualizações automaticamente (AppImage)",
+   "btn_check_now": "Verificar agora",
+   "current_version": "Versão atual: {v}",
+   "update_available": "Nova versão disponível: {v}",
+   "update_none": "Você já está na versão mais recente ({v}).",
+   "update_downloading": "Baixando atualização... {p}%",
+   "update_installing": "Instalando atualização e reiniciando...",
+   "update_error": "Erro ao verificar/baixar atualização: {e}",
+   "update_restart": "Atualização instalada. O programa será reiniciado.",
+   "update_open": "Abrir página de download",
+ },
+ "en": {
+   "group_updates": "🔄  Updates",
+   "group_updates_desc": "Check for and install new versions of the program automatically.",
+   "chk_auto_check": "Check for updates automatically on startup",
+   "chk_auto_install": "Download and install updates automatically (AppImage)",
+   "btn_check_now": "Check now",
+   "current_version": "Current version: {v}",
+   "update_available": "New version available: {v}",
+   "update_none": "You are already on the latest version ({v}).",
+   "update_downloading": "Downloading update... {p}%",
+   "update_installing": "Installing update and restarting...",
+   "update_error": "Error checking/downloading update: {e}",
+   "update_restart": "Update installed. The program will restart.",
+   "update_open": "Open download page",
+ },
+}
+for _lang, _d in _UPDATE_KEYS.items():
+    TRANSLATIONS.setdefault(_lang, {})
+    TRANSLATIONS[_lang].update(_d)
+
 # Fallback: se idioma não tiver alguma chave, usar en
 def _fill_missing():
     base = TRANSLATIONS.get("en", {})

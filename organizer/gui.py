@@ -21,6 +21,8 @@ from .config import load_config, save_config, ensure_dirs, DEFAULT_CATEGORIES, D
 from .classifier import plan_moves
 from .mover import execute_moves, list_history, undo_history
 from .i18n import t, set_language, get_language, load_language_from_config
+from .version import __version__
+from . import updater
 
 
 class Worker(QThread):
@@ -255,6 +257,25 @@ class MainWindow(FluentWindow):
 
         cl.addWidget(grp_beh)
 
+        # Atualizações
+        grp_upd = self._group(t("group_updates"), t("group_updates_desc"))
+        ubl = QVBoxLayout()
+        self.lbl_version = CaptionLabel(t("current_version", v=__version__))
+        ubl.addWidget(self.lbl_version)
+        self.chk_auto_check = CheckBox(t("chk_auto_check"))
+        self.chk_auto_install = CheckBox(t("chk_auto_install"))
+        ubl.addWidget(self.chk_auto_check)
+        ubl.addWidget(self.chk_auto_install)
+        row_upd = QHBoxLayout()
+        self.btn_check_now = PushButton(t("btn_check_now"))
+        row_upd.addWidget(self.btn_check_now)
+        self.lbl_update_status = CaptionLabel("")
+        row_upd.addWidget(self.lbl_update_status)
+        row_upd.addStretch()
+        ubl.addLayout(row_upd)
+        grp_upd.layout().addLayout(ubl)
+        cl.addWidget(grp_upd)
+
         # Categorias
         grp_cat = self._group(t("group_categories"), t("group_categories_desc"))
         gcl = grp_cat._inner
@@ -275,6 +296,7 @@ class MainWindow(FluentWindow):
 
         self.btn_save_cfg.clicked.connect(self._save_config)
         self.btn_restore.clicked.connect(self._restore_defaults)
+        self.btn_check_now.clicked.connect(self._check_updates_now)
 
     # ---------- ORGANIZE ----------
     def _build_organize(self, parent):
@@ -414,6 +436,8 @@ class MainWindow(FluentWindow):
             if self.combo_lang.itemData(i) == lang:
                 self.combo_lang.setCurrentIndex(i)
                 break
+        self.chk_auto_check.setChecked(bool(c.get("auto_check_updates", True)))
+        self.chk_auto_install.setChecked(bool(c.get("auto_install_updates", False)))
         self.cat_editor.load(c.get("categories", DEFAULT_CATEGORIES))
 
     def _collect_config(self) -> dict:
@@ -428,6 +452,8 @@ class MainWindow(FluentWindow):
             "skip_unknown": self.chk_skip_unknown.isChecked(),
             "conflict_policy": self.combo_conflict.currentText(),
             "language": self.combo_lang.currentData() or "pt_BR",
+            "auto_check_updates": self.chk_auto_check.isChecked(),
+            "auto_install_updates": self.chk_auto_install.isChecked(),
             "theme": "dark",
             "ignore_dirs": self.cfg.get("ignore_dirs", []),
             "categories": cats,
@@ -468,6 +494,72 @@ class MainWindow(FluentWindow):
         self._load_config_to_ui()
         self._apply_theme("dark")
         self._notify(t("msg_defaults_restored"), success=True)
+
+    def _check_updates_now(self):
+        self.lbl_update_status.setText("...")
+        thr = _UpdateThread(self)
+        thr.result.connect(self._on_update_result)
+        thr.start()
+        self._update_thread = thr
+
+    def _auto_check_on_start(self):
+        cfg = load_config()
+        if not cfg.get("auto_check_updates", True):
+            return
+        thr = _UpdateThread(self)
+        thr.result.connect(self._on_update_result_auto)
+        thr.start()
+        self._update_thread = thr
+
+    def _on_update_result(self, info):
+        if info.get("error"):
+            self.lbl_update_status.setText(t("update_error", e=info["error"]))
+            self._notify(t("update_error", e=info["error"]), success=False)
+            return
+        if not info.get("has"):
+            self.lbl_update_status.setText(t("update_none", v=info.get("tag") or __version__))
+            self._notify(t("update_none", v=info.get("tag") or __version__), success=True)
+            return
+        self.lbl_update_status.setText(t("update_available", v=info["tag"]))
+        self._notify(t("update_available", v=info["tag"]), success=True)
+        cfg = load_config()
+        if cfg.get("auto_install_updates") and info.get("asset") and updater.is_appimage():
+            self._download_and_install(info["asset"], info["tag"])
+        elif info.get("url"):
+            # store url for manual
+            self._last_update_url = info["url"]
+
+    def _on_update_result_auto(self, info):
+        if info.get("error") or not info.get("has"):
+            return
+        self.lbl_update_status.setText(t("update_available", v=info["tag"]))
+        self._notify(t("update_available", v=info["tag"]), success=True)
+        cfg = load_config()
+        if cfg.get("auto_install_updates") and info.get("asset") and updater.is_appimage():
+            self._download_and_install(info["asset"], info["tag"])
+        else:
+            self._last_update_url = info.get("url")
+
+    def _download_and_install(self, asset, tag):
+        self.lbl_update_status.setText(t("update_downloading", p=0))
+        thr = _DownloadThread(asset, self)
+        thr.progress.connect(lambda d, tot: self.lbl_update_status.setText(
+            t("update_downloading", p=int(d * 100 / tot) if tot else 0)))
+        thr.finished_ok.connect(self._on_download_ok)
+        thr.failed.connect(lambda e: (self.lbl_update_status.setText(t("update_error", e=e)),
+                                     self._notify(t("update_error", e=e), success=False)))
+        thr.start()
+        self._download_thread = thr
+
+    def _on_download_ok(self, path):
+        self.lbl_update_status.setText(t("update_installing"))
+        try:
+            updater.apply_appimage_update(path)
+            self._notify(t("update_restart"), success=True)
+            QApplication.quit()
+        except Exception as e:
+            self.lbl_update_status.setText(t("update_error", e=str(e)))
+            self._notify(t("update_error", e=str(e)), success=False)
 
     def _notify(self, msg, success=True):
         InfoBar.success if success else InfoBar.error
@@ -603,6 +695,32 @@ class MainWindow(FluentWindow):
         self.log_text.append(msg)
 
 
+
+class _UpdateThread(QThread):
+    result = Signal(object)
+    def run(self):
+        try:
+            has, tag, asset, url, rel, err = updater.check_for_updates()
+            self.result.emit({"has": has, "tag": tag, "asset": asset, "url": url, "error": err})
+        except Exception as e:
+            self.result.emit({"has": False, "tag": None, "asset": None, "url": None, "error": str(e)})
+
+
+class _DownloadThread(QThread):
+    progress = Signal(int, int)
+    finished_ok = Signal(str)
+    failed = Signal(str)
+    def __init__(self, asset, parent=None):
+        super().__init__(parent)
+        self.asset = asset
+    def run(self):
+        try:
+            path = updater.download_asset(self.asset, progress=lambda d, tot: self.progress.emit(d, tot))
+            self.finished_ok.emit(str(path))
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 def main():
     ensure_dirs()
     load_language_from_config()
@@ -625,6 +743,7 @@ def main():
     app.setPalette(pal)
     w = MainWindow()
     w.show()
+    w._auto_check_on_start()
     sys.exit(app.exec())
 
 
