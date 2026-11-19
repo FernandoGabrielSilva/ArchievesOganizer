@@ -176,3 +176,20 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
+          body: |
+            ## Organizador de Arquivos — ${{ github.ref_name }}
+
+            Organize arquivos por tipo em pastas com interface Fluent Design.
+
+            ### Downloads
+            - **OrganizadorArquivos-x86_64.AppImage** — AppImage auto-contido (x86_64)
+            - **OrganizadorArquivos-aarch64.AppImage** — AppImage auto-contido (ARM64)
+            - **OrganizadorArquivos_x86_64.deb / _arm64.deb** — pacotes Debian/Ubuntu
+            - **organizador-arquivos-*.rpm** — pacote Fedora/RHEL
+            - **OrganizadorArquivos-*.tar.gz** — tarball portátil
+            - **.flatpak / *.pkg.tar.zst** — Flatpak e Arch (quando disponíveis)
+
+            ### Novidades
+            - Verificação e instalação automática de atualizações (configurável).
+            - 28 idiomas, tema dark/light, preview e histórico com desfazer.
+            - Builds multi-arquitetura automatizados via GitHub Actions.

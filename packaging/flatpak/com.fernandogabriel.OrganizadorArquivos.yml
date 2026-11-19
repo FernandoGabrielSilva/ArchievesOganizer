@@ -23,4 +23,3 @@ modules:
         path: organizador.desktop
       - type: file
         path: icon.png
-PY
