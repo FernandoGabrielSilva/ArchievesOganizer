@@ -56,7 +56,7 @@ jobs:
           cp resources/icon.png AppDir/organizador-arquivos.png
           cp resources/icon.png AppDir/OrganizadorArquivos.png
           cp resources/AppRun AppDir/AppRun
-          chmod +x AppDir/AppRun AppDir/usr/bin/organizador-arquivos
+          chmod +x AppDir/AppRun AppDir/usr/bin/OrganizadorArquivos
           wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${{ matrix.appimage_arch }}.AppImage" -O /tmp/appimagetool
           chmod +x /tmp/appimagetool
           ARCH=${{ matrix.appimage_arch }} /tmp/appimagetool AppDir "OrganizadorArquivos-${{ matrix.appimage_arch }}.AppImage" || true
