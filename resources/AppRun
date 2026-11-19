@@ -1,3 +1,18 @@
 #!/usr/bin/env bash
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/OrganizadorArquivos" "$@"
+
+# Dentro do AppImage o binário fica em usr/bin/, junto deste script na raiz do AppDir.
+BIN="$HERE/usr/bin/OrganizadorArquivos"
+
+# Executando diretamente do repositório (para testes), usa o build local em dist/.
+if [ ! -x "$BIN" ] && [ -x "$HERE/../dist/OrganizadorArquivos" ]; then
+    BIN="$HERE/../dist/OrganizadorArquivos"
+fi
+
+if [ ! -x "$BIN" ]; then
+    echo "Binário não encontrado: $BIN" >&2
+    echo "Execute o AppImage, ou rode build_appimage.sh / PyInstaller primeiro." >&2
+    exit 1
+fi
+
+exec "$BIN" "$@"
