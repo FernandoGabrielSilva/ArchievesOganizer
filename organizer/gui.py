@@ -427,7 +427,7 @@ class MainWindow(FluentWindow):
         self.btn_help.clicked.connect(self._howto)
         action_row.addWidget(self.btn_help)
         self.btn_analyze = PrimaryPushButton(t("btn_analyze"))
-        self.btn_analyze.setToolTip("Prévia (dry-run): varre as pastas e mostra quais arquivos SERIAM movidos. Nenhum arquivo é alterado até você clicar em 'Aplicar movimentos'.")
+        self.btn_analyze.setToolTip("Analisa as pastas e mostra quais arquivos SERIAM movidos. Nenhum arquivo é alterado até você clicar em 'Aplicar movimentos'.")
         self.btn_apply = PrimaryPushButton(t("btn_apply"))
         self.btn_apply.setEnabled(False)
         self.btn_apply.setToolTip("Executa os movimentos mostrados no preview. Pede confirmação antes.")
