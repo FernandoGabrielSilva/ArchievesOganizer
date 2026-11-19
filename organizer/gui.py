@@ -9,6 +9,22 @@ from PySide6.QtWidgets import (
     QSizePolicy, QHeaderView, QTableWidget, QTableWidgetItem,
 )
 from PySide6.QtGui import QAction, QPainter
+
+# PySide6 6.12 tem um bug de refcount em QPainter.setClipping(True) que aborta
+# o processo (`none_dealloc`/`bool_dealloc`) ao pintar a tabela do
+# qfluentwidgets. Passar um int evita tocar no singleton True/False do Python.
+_original_set_clipping = QPainter.setClipping
+
+
+def _safe_set_clipping(self, enabled):
+    return _original_set_clipping(self, 1 if enabled else 0)
+
+
+try:
+    QPainter.setClipping = _safe_set_clipping
+except Exception:
+    pass
+
 from qfluentwidgets import ScrollArea, isDarkTheme
 from qfluentwidgets import (
     FluentWindow, FluentIcon as FIF, PushButton, PrimaryPushButton, LineEdit,
