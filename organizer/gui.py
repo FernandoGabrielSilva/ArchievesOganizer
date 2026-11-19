@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, qInstallMessageHandler
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog,
     QSizePolicy, QHeaderView, QTableWidget, QTableWidgetItem,
@@ -32,6 +32,23 @@ from qfluentwidgets import (
     CardWidget, SubtitleLabel, BodyLabel, CaptionLabel, InfoBar,
     InfoBarPosition, setTheme, Theme, setThemeColor, NavigationItemPosition,
 )
+
+# O qfluentwidgets cria animações de "drop" para InfoBars empilhadas sem
+# endValue; o Qt imprime um aviso inofensivo nesses casos. Silencia apenas
+# esse aviso específico, mantendo todas as outras mensagens do Qt.
+_qt_msg_handler_original = qInstallMessageHandler(None)
+
+
+def _qt_message_handler(mode, context, message):
+    if "starting an animation without end value" in message:
+        return
+    if _qt_msg_handler_original is not None:
+        _qt_msg_handler_original(mode, context, message)
+    else:
+        print(message, file=sys.stderr)
+
+
+qInstallMessageHandler(_qt_message_handler)
 
 
 def _safe_scroll_handle_paint(self, event):
@@ -605,7 +622,6 @@ class MainWindow(FluentWindow):
             self._notify(t("update_error", e=str(e)), success=False)
 
     def _notify(self, msg, success=True):
-        InfoBar.success if success else InfoBar.error
         (InfoBar.success if success else InfoBar.error)(
             title="Organizador",
             content=msg,
