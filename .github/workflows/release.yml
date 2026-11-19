@@ -44,7 +44,7 @@ jobs:
       - name: Build onefile binary
         run: |
           pyinstaller --noconfirm --windowed --onefile --name OrganizadorArquivos main.py \
-            --hidden-import organizer --collect-all qfluentwidgets --collect-all PySide6
+            --hidden-import organizer --collect-all qfluentwidgets --collect-all PySide6 --collect-data certifi
 
       - name: Build AppImage
         run: |

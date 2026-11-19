@@ -3,6 +3,7 @@ import json
 import os
 import platform
 import shutil
+import ssl
 import stat
 import sys
 import tempfile
@@ -19,9 +20,44 @@ def current_version():
     return __version__
 
 
+def _ca_bundle():
+    """Localiza um pacote de CAs confiáveis, inclusive dentro do AppImage."""
+    candidates = []
+    try:
+        import certifi
+        candidates.append(certifi.where())
+    except Exception:
+        pass
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(os.path.join(meipass, "certifi", "cacert.pem"))
+        candidates.append(os.path.join(meipass, "cacert.pem"))
+    candidates.extend([
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/cert.pem",
+    ])
+    seen = set()
+    for path in candidates:
+        if path and path not in seen and os.path.isfile(path):
+            return path
+        if path:
+            seen.add(path)
+    return None
+
+
+def _ssl_context():
+    """Contexto SSL explícito: o bundle onefile pode não herdar os CAs do sistema."""
+    cafile = _ca_bundle()
+    if cafile:
+        os.environ["SSL_CERT_FILE"] = cafile
+        return ssl.create_default_context(cafile=cafile)
+    return ssl.create_default_context()
+
+
 def _http_get_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
+    with urllib.request.urlopen(req, timeout=20, context=_ssl_context()) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -120,7 +156,7 @@ def download_asset(asset, dest_dir=None, progress=None):
     name = asset["name"]
     dest = dest_dir / name
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(req, timeout=60, context=_ssl_context()) as resp:
         total = int(resp.headers.get("Content-Length", 0))
         downloaded = 0
         chunk = 65536

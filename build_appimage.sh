@@ -8,7 +8,7 @@ cd "$BASE"
 if [ ! -x dist/$APP ]; then
     echo "Binário não encontrado. Gerando com PyInstaller..."
     python3 -m PyInstaller --noconfirm --windowed --onefile --name "$APP" main.py \
-        --hidden-import organizer --collect-all qfluentwidgets --collect-all PySide6
+        --hidden-import organizer --collect-all qfluentwidgets --collect-all PySide6 --collect-data certifi
 fi
 
 if [ ! -x "dist/$APP" ]; then
